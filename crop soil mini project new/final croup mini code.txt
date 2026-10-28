@@ -1,0 +1,821 @@
+ import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+from tensorflow.keras import layers
+import random
+import pandas as pd
+from datetime import datetime
+import matplotlib.pyplot as plt
+import seaborn as sns
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler, LabelEncoder
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import warnings
+import os
+
+warnings.filterwarnings('ignore')
+
+plt.style.use('seaborn-v0_8-darkgrid')
+sns.set_palette("husl")
+
+# =========================================
+# SOIL TEST REPORT CLASS
+# =========================================
+
+class SoilTestReport:
+    """Generate professional soil test report"""
+
+    def __init__(self, lab_number, client_name, county, sample_id=1):
+        self.lab_number = lab_number
+        self.client_name = client_name
+        self.county = county
+        self.sample_id = sample_id
+        self.date_received = datetime.now().strftime("%m/%d/%Y")
+        self.date_processed = datetime.now().strftime("%m/%d/%Y")
+        self.soil_data = None
+        self.crop_recommendations = None
+
+    def set_soil_data(self, ph, p_ppm, k_ppm, organic_matter, soil_type,
+                      temperature=25, humidity=60, moisture=50):
+        self.soil_data = {
+            "ph": ph, "p_ppm": p_ppm, "k_ppm": k_ppm,
+            "organic_matter": organic_matter, "soil_type": soil_type,
+            "temperature": temperature, "humidity": humidity, "moisture": moisture
+        }
+
+    def set_crop_recommendations(self, crop_suitability):
+        self.crop_recommendations = crop_suitability
+
+    def interpret_ph(self):
+        ph = self.soil_data["ph"]
+        if ph < 5.5:
+            return "Very Low (Acidic)", "🔴", f"Apply {int((6.5 - ph) * 2.5)} lbs lime per 1000 sq ft"
+        elif ph < 6.0:
+            return "Low (Slightly Acidic)", "🟡", "Consider applying lime to raise pH"
+        elif ph <= 7.0:
+            return "Optimal", "🟢", "No pH adjustment needed"
+        elif ph <= 7.5:
+            return "High (Slightly Alkaline)", "🟡", "Monitor pH levels"
+        else:
+            return "Very High (Alkaline)", "🔴", f"Apply {int((ph - 7.0) * 1.5)} lbs sulfur per 1000 sq ft"
+
+    def interpret_phosphorus(self):
+        p = self.soil_data["p_ppm"]
+        if p < 20:
+            return "Very Low", "🔴", "Apply high phosphorus fertilizer (10-20-10)"
+        elif p < 30:
+            return "Low", "🟡", "Apply starter fertilizer with high P"
+        elif p <= 50:
+            return "Optimal", "🟢", "Maintenance level"
+        elif p <= 70:
+            return "High", "🟡", "Reduce phosphorus application"
+        else:
+            return "Very High", "🔴", "No phosphorus needed"
+
+    def interpret_potassium(self):
+        k = self.soil_data["k_ppm"]
+        if k < 40:
+            return "Very Low", "🔴", "Apply potash-rich fertilizer (0-0-60)"
+        elif k < 60:
+            return "Low", "🟡", "Apply winterizer grade fertilizer"
+        elif k <= 120:
+            return "Optimal", "🟢", "Maintenance level"
+        elif k <= 180:
+            return "High", "🟡", "Reduce potassium application"
+        else:
+            return "Very High", "🔴", "No potassium needed"
+
+    def interpret_organic_matter(self):
+        om = self.soil_data["organic_matter"]
+        if om < 1.0:
+            return "Very Low", "🔴", "Add 3-4 inches of organic compost"
+        elif om < 2.0:
+            return "Low", "🟡", "Add 2-3 inches of organic compost"
+        elif om <= 4.0:
+            return "Optimal", "🟢", "Maintain with annual compost addition"
+        else:
+            return "High", "🟢", "Good organic matter level"
+
+    def get_fertilizer_recommendation(self):
+        p = self.soil_data["p_ppm"]
+        k = self.soil_data["k_ppm"]
+        if p < 30 and k < 60:
+            return {"grade": "10-20-20", "name": "Complete Fertilizer",
+                    "rate_lbs_per_1000sqft": 5, "application": "Broadcast and incorporate into top 6 inches"}
+        elif p < 30:
+            return {"grade": "10-20-10", "name": "High Phosphorus Fertilizer",
+                    "rate_lbs_per_1000sqft": 4, "application": "Apply in spring before planting"}
+        elif k < 60:
+            return {"grade": "10-10-20", "name": "High Potassium Fertilizer",
+                    "rate_lbs_per_1000sqft": 4, "application": "Apply in fall as winterizer"}
+        else:
+            return {"grade": "10-10-10", "name": "Balanced Fertilizer",
+                    "rate_lbs_per_1000sqft": 3, "application": "Apply for maintenance"}
+
+    def get_lime_sulfur_recommendation(self):
+        ph = self.soil_data["ph"]
+        if ph < 6.0:
+            lime_needed = (6.5 - ph) * 2.5
+            return f"Apply {lime_needed:.0f} lbs of agricultural lime per 1000 sq ft"
+        elif ph > 7.2:
+            sulfur_needed = (ph - 6.8) * 1.5
+            return f"Apply {sulfur_needed:.0f} lbs of elemental sulfur per 1000 sq ft"
+        else:
+            return "No lime or sulfur needed"
+
+    def generate_full_report(self):
+        if not self.soil_data:
+            return "No soil data available"
+
+        ph_status, ph_icon, ph_rec = self.interpret_ph()
+        p_status, p_icon, p_rec = self.interpret_phosphorus()
+        k_status, k_icon, k_rec = self.interpret_potassium()
+        om_status, om_icon, om_rec = self.interpret_organic_matter()
+        fertilizer = self.get_fertilizer_recommendation()
+        lime_rec = self.get_lime_sulfur_recommendation()
+
+        report = f"""
+{'='*80}
+                    SOIL TEST REPORT - LAWN & GARDEN
+{'='*80}
+Lab Number: {self.lab_number}                    Date Received: {self.date_received}
+Client: {self.client_name}                       Date Processed: {self.date_processed}
+County: {self.county}                            Sample ID: {self.sample_id}
+
+{'='*80}
+                    LABORATORY ANALYSIS RESULTS
+{'='*80}
+Parameter                    Value        Status              Recommendation
+-------------------------------------------------------------------------------
+pH                           {self.soil_data['ph']:.1f}          {ph_status:<20} {ph_rec}
+Phosphorus (P)              {self.soil_data['p_ppm']:.0f} ppm     {p_status:<15} {ph_icon}  {p_rec}
+Potassium (K)               {self.soil_data['k_ppm']:.0f} ppm     {k_status:<15} {k_icon}  {k_rec}
+Organic Matter              {self.soil_data['organic_matter']:.1f}%        {om_status:<15} {om_icon}  {om_rec}
+Soil Type                   {self.soil_data['soil_type']:<20}
+
+{'='*80}
+                    INTERPRETATION & RECOMMENDATIONS
+{'='*80}
+
+📊 SOIL PH ANALYSIS:
+----------------------------------------
+{ph_rec}
+
+🌱 NUTRIENT MANAGEMENT:
+----------------------------------------
+• Phosphorus: {p_rec}
+• Potassium: {k_rec}
+• Organic Matter: {om_rec}
+
+{'='*80}
+                    FERTILIZER RECOMMENDATIONS
+{'='*80}
+
+Based on your soil analysis results, we recommend:
+
+Fertilizer Grade: {fertilizer['grade']} ({fertilizer['name']})
+Application Rate: {fertilizer['rate_lbs_per_1000sqft']} lbs per 1000 sq ft
+Application Method: {fertilizer['application']}
+
+{'-'*80}
+Lime/Sulfur Recommendation:
+{'-'*80}
+{lime_rec}
+
+{'='*80}
+                    CULTURAL & MANAGEMENT TIPS
+{'='*80}
+
+• Use only fertilizers manufactured specifically for your crop type
+• Sweep up any fertilizer accidentally applied to paved surfaces
+• Water the area for at least 30 minutes after applying fertilizer
+• Re-test soil every 2 to 3 years to monitor changes
+• Avoid 'weed and feed' or crabgrass inhibitor fertilizer types for gardens
+
+{'='*80}
+                    CROP SPECIFIC RECOMMENDATIONS
+{'='*80}
+"""
+        if self.crop_recommendations:
+            report += f"\n{'Crop':<15} {'Suitability Score':<20} {'Recommendation'}\n"
+            report += "-" * 55 + "\n"
+            for crop in self.crop_recommendations[:5]:
+                report += f"{crop['crop']:<15} {crop['score']:<20.1f}% {crop['suitability']}\n"
+
+        report += f"""
+{'='*80}
+                    REFERENCES & RESOURCES
+{'='*80}
+For additional information on soil testing and crop management:
+• Contact your local County Extension Office
+• Visit: http://uwlab.soils.wisc.edu
+• Email: soil.lab@extension.wisc.edu
+
+This report is prepared based on standard soil analysis procedures.
+Results are interpreted according to current agricultural guidelines.
+
+{'='*80}
+                    SUMMARY
+{'='*80}
+
+✅ Soil pH: {self.soil_data['ph']:.1f} - {ph_status}
+✅ Phosphorus Level: {p_status}
+✅ Potassium Level: {k_status}
+✅ Organic Matter: {om_status}
+
+🔧 Primary Recommendation: {fertilizer['name']} ({fertilizer['grade']})
+📅 Next Testing Recommended: {datetime.now().replace(year=datetime.now().year + 2).strftime("%m/%d/%Y")}
+
+{'='*80}
+For questions about this report, please contact the laboratory.
+{'='*80}
+"""
+        return report
+
+    def save_report_to_file(self, filename=None):
+        if filename is None:
+            filename = f"Soil_Test_Report_{self.lab_number}_{datetime.now().strftime('%Y%m%d')}.txt"
+        with open(filename, 'w') as f:
+            f.write(self.generate_full_report())
+        print(f"\n✅ Report saved to: {filename}")
+        return filename
+
+
+# ========================================
+# DATASET LOADER
+# =========================================
+
+class CropSoilDataset:
+    """Load real CSV dataset  synthetic data as fallback"""
+
+    # Default dataset path — override when instantiating or calling load_dataset()
+    DEFAULT_CSV_PATH = "/content/drive/MyDrive/crop soil mini project new/crop_soil_dataset_10000.csv"
+
+    @staticmethod
+    def calculate_growth_score(factors, crop_requirements):
+        scores = []
+        temp = factors['temperature']
+        cr = crop_requirements
+        if temp < cr['temp_min']:
+            ts = max(0, (temp - cr['temp_min'] + 10) / 10)
+        elif temp > cr['temp_max']:
+            ts = max(0, (cr['temp_max'] + 10 - temp) / 10)
+        else:
+            ts = 1 - abs(temp - cr['temp_opt']) / 20
+        scores.append(ts * 0.25)
+
+        hum = factors['humidity']
+        if hum < cr['humidity_min']:
+            hs = max(0, (hum - cr['humidity_min'] + 20) / 20)
+        elif hum > cr['humidity_max']:
+            hs = max(0, (cr['humidity_max'] + 20 - hum) / 20)
+        else:
+            hs = 1 - abs(hum - cr['humidity_opt']) / 30
+        scores.append(hs * 0.15)
+
+        moist = factors['moisture']
+        if moist < cr['moisture_min']:
+            ms = max(0, (moist - cr['moisture_min'] + 20) / 20)
+        elif moist > cr['moisture_max']:
+            ms = max(0, (cr['moisture_max'] + 20 - moist) / 20)
+        else:
+            ms = 1 - abs(moist - cr['moisture_opt']) / 30
+        scores.append(ms * 0.15)
+
+        for code in ['n', 'p', 'k']:
+            value = factors[code]
+            opt = cr[f'{code}_opt']
+            min_val = cr[f'{code}_min']
+            max_val = cr[f'{code}_max']
+            if value < min_val:
+                ns = max(0, (value - min_val + 30) / 30)
+            elif value > max_val:
+                ns = max(0, (max_val + 30 - value) / 30)
+            else:
+                ns = 1 - abs(value - opt) / (max_val - min_val)
+            scores.append(ns * 0.10)
+
+        ph = factors['ph']
+        if ph < cr['ph_min']:
+            ps = max(0, (ph - cr['ph_min'] + 1) / 1)
+        elif ph > cr['ph_max']:
+            ps = max(0, (cr['ph_max'] + 1 - ph) / 1)
+        else:
+            ps = 1 - abs(ph - cr['ph_opt']) / 1.5
+        scores.append(ps * 0.10)
+
+        return np.clip(sum(scores) * cr['growth_potential'] / 100, 0, 100)
+
+    def load_dataset(self, csv_path=None):
+        """
+        Load dataset from CSV file.
+
+        Parameters
+        ----------
+        csv_path : str, optional
+            Path to the CSV file.  Defaults to DEFAULT_CSV_PATH.
+            The CSV must contain columns:
+            crop, soil, temperature, humidity, moisture, n, p, k, ph, growth
+
+        Returns
+        -------
+        pd.DataFrame
+        """
+        if csv_path is None:
+            csv_path = self.DEFAULT_CSV_PATH
+
+        if not os.path.exists(csv_path):
+            raise FileNotFoundError(
+                f"Dataset not found at '{csv_path}'.\n"
+                "Please provide the path to your crop_soil_dataset CSV file."
+            )
+
+        print(f"✅ Loading dataset from: {csv_path}")
+        df = pd.read_csv(csv_path)
+
+        required_cols = {'crop', 'soil', 'temperature', 'humidity',
+                         'moisture', 'n', 'p', 'k', 'ph', 'growth'}
+        missing = required_cols - set(df.columns)
+        if missing:
+            raise ValueError(
+                f"CSV is missing required columns: {missing}\n"
+                f"Found columns: {list(df.columns)}"
+            )
+
+        print(f"   Loaded {len(df):,} rows | Crops: {df['crop'].nunique()} | Soils: {df['soil'].nunique()}")
+        print(f"   Growth range: {df['growth'].min():.1f}% - {df['growth'].max():.1f}%")
+        return df
+
+
+# =========================================
+# NEURAL NETWORK MODEL
+# =========================================
+
+class AdvancedCropModel:
+    """Neural network for crop growth prediction"""
+
+    def __init__(self):
+        self.model = None
+        self.scaler = StandardScaler()
+        self.crop_encoder = LabelEncoder()
+        self.soil_encoder = LabelEncoder()
+        self.history = None
+
+    def prepare_data(self, df):
+        print("\nPreparing data...")
+        crop_encoded = self.crop_encoder.fit_transform(df['crop'])
+        soil_encoded = self.soil_encoder.fit_transform(df['soil'])
+        numerical_cols = ['temperature', 'humidity', 'moisture', 'n', 'p', 'k', 'ph']
+        numerical_data = df[numerical_cols].values
+        numerical_scaled = self.scaler.fit_transform(numerical_data)
+        target = df['growth'].values / 100.0
+        return crop_encoded, soil_encoded, numerical_scaled, target
+
+    def build_model(self, num_crops, num_soils, num_features):
+        crop_input      = layers.Input(shape=(1,), name='crop_input')
+        soil_input      = layers.Input(shape=(1,), name='soil_input')
+        numerical_input = layers.Input(shape=(num_features,), name='numerical_input')
+
+        crop_embed = layers.Embedding(num_crops, 16)(crop_input)
+        crop_embed = layers.Flatten()(crop_embed)
+        crop_embed = layers.Dropout(0.2)(crop_embed)
+
+        soil_embed = layers.Embedding(num_soils, 16)(soil_input)
+        soil_embed = layers.Flatten()(soil_embed)
+        soil_embed = layers.Dropout(0.2)(soil_embed)
+
+        num_dense = layers.Dense(64, activation='relu')(numerical_input)
+        num_dense = layers.BatchNormalization()(num_dense)
+        num_dense = layers.Dropout(0.3)(num_dense)
+        num_dense = layers.Dense(32, activation='relu')(num_dense)
+
+        combined = layers.Concatenate()([crop_embed, soil_embed, num_dense])
+        x = layers.Dense(128, activation='relu')(combined)
+        x = layers.BatchNormalization()(x)
+        x = layers.Dropout(0.3)(x)
+        x = layers.Dense(64, activation='relu')(x)
+        x = layers.BatchNormalization()(x)
+        x = layers.Dropout(0.2)(x)
+        x = layers.Dense(32, activation='relu')(x)
+        output = layers.Dense(1, activation='sigmoid', name='growth_output')(x)
+
+        model = keras.Model(inputs=[crop_input, soil_input, numerical_input], outputs=output)
+        model.compile(optimizer=keras.optimizers.Adam(learning_rate=0.001),
+                      loss='mse', metrics=['mae', 'mse'])
+        return model
+
+    def train(self, df, epochs=50, batch_size=64, validation_split=0.2):
+        crop_enc, soil_enc, num_scaled, target = self.prepare_data(df)
+
+        (X_crop_train, X_crop_test,
+         X_soil_train, X_soil_test,
+         X_num_train,  X_num_test,
+         y_train,      y_test) = train_test_split(
+            crop_enc, soil_enc, num_scaled, target,
+            test_size=validation_split, random_state=42)
+
+        num_features = num_scaled.shape[1]
+        num_crops    = len(self.crop_encoder.classes_)
+        num_soils    = len(self.soil_encoder.classes_)
+
+        self.model = self.build_model(num_crops, num_soils, num_features)
+
+        callbacks = [
+            keras.callbacks.EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True),
+            keras.callbacks.ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=0.00001)
+        ]
+
+        print("\nTraining model...")
+        self.history = self.model.fit(
+            {'crop_input': X_crop_train, 'soil_input': X_soil_train, 'numerical_input': X_num_train},
+            y_train,
+            validation_data=(
+                {'crop_input': X_crop_test, 'soil_input': X_soil_test, 'numerical_input': X_num_test},
+                y_test),
+            epochs=epochs, batch_size=batch_size, callbacks=callbacks, verbose=1)
+
+        train_loss = self.model.evaluate(
+            {'crop_input': X_crop_train, 'soil_input': X_soil_train, 'numerical_input': X_num_train},
+            y_train, verbose=0)
+        test_loss = self.model.evaluate(
+            {'crop_input': X_crop_test, 'soil_input': X_soil_test, 'numerical_input': X_num_test},
+            y_test, verbose=0)
+
+        print(f"\n✅ Training complete!")
+        print(f"   Train Loss: {train_loss[0]:.4f}, MAE: {train_loss[1]:.4f}")
+        print(f"   Test  Loss: {test_loss[0]:.4f},  MAE: {test_loss[1]:.4f}")
+
+        return self.history
+
+    def predict(self, crop_name, soil_name, numerical_values):
+        crop_enc  = self.crop_encoder.transform([crop_name])[0]
+        soil_enc  = self.soil_encoder.transform([soil_name])[0]
+        num_scaled = self.scaler.transform([numerical_values])
+        prediction = self.model.predict(
+            {'crop_input': np.array([crop_enc]),
+             'soil_input': np.array([soil_enc]),
+             'numerical_input': num_scaled}, verbose=0)[0][0]
+        return prediction * 100
+
+
+# =========================================
+# VISUALIZATION CLASS
+# =========================================
+
+class CropAnalytics:
+
+    def __init__(self):
+        self.training_history = None
+
+    def plot_training_history(self, history):
+        self.training_history = history
+        fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+
+        axes[0].plot(history.history['loss'],     label='Training Loss',   linewidth=2)
+        axes[0].plot(history.history['val_loss'], label='Validation Loss', linewidth=2)
+        axes[0].set_title('Model Loss', fontsize=14, fontweight='bold')
+        axes[0].set_xlabel('Epoch'); axes[0].set_ylabel('Loss')
+        axes[0].legend(); axes[0].grid(True, alpha=0.3)
+
+        if 'mae' in history.history:
+            axes[1].plot(history.history['mae'],     label='Training MAE',   linewidth=2)
+            axes[1].plot(history.history['val_mae'], label='Validation MAE', linewidth=2)
+            axes[1].set_title('Mean Absolute Error', fontsize=14, fontweight='bold')
+            axes[1].set_xlabel('Epoch'); axes[1].set_ylabel('MAE')
+            axes[1].legend(); axes[1].grid(True, alpha=0.3)
+
+        plt.tight_layout(); plt.show()
+
+    def plot_ph_optimization(self):
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ph_range = np.linspace(4, 9, 50)
+        crops  = ['Rice', 'Wheat', 'Potato', 'Cotton', 'Maize']
+        colors = ['#e74c3c', '#3498db', '#2ecc71', '#f39c12', '#9b59b6']
+
+        crop_ph = {
+            'Rice':   (5.5, 7.0, 6.0, 6.5),
+            'Wheat':  (6.0, 7.5, 6.5, 7.0),
+            'Potato': (5.0, 6.5, 5.5, 6.0),
+            'Cotton': (6.0, 7.5, 6.5, 7.0),
+            'Maize':  (5.8, 7.2, 6.0, 6.8),
+        }
+        for crop, color in zip(crops, colors):
+            ph_min, ph_max, opt_lo, opt_hi = crop_ph[crop]
+            scores = []
+            for ph in ph_range:
+                if opt_lo <= ph <= opt_hi:
+                    score = 100
+                elif ph_min <= ph <= ph_max:
+                    score = 70
+                else:
+                    score = 30
+                scores.append(score)
+            ax.plot(ph_range, scores, label=crop, linewidth=2, color=color)
+
+        ax.set_xlabel('pH Level', fontsize=12)
+        ax.set_ylabel('Suitability Score (%)', fontsize=12)
+        ax.set_title('pH Sensitivity by Crop Type', fontsize=16, fontweight='bold')
+        ax.legend(loc='best'); ax.grid(True, alpha=0.3)
+        ax.axhline(y=70, color='green', linestyle='--', alpha=0.5)
+        plt.tight_layout(); plt.show()
+
+    def plot_crop_comparison_dashboard(self, crop_scores):
+        fig = make_subplots(
+            rows=2, cols=2,
+            subplot_titles=('Top Crop Suitability Scores', 'Score Distribution',
+                            'Suitability Categories', 'Performance Summary'),
+            specs=[[{'type': 'bar'}, {'type': 'box'}],
+                   [{'type': 'pie'}, {'type': 'bar'}]])
+
+        top_crops   = crop_scores[:8]
+        crops_names = [c['crop'] for c in top_crops]
+        scores      = [c['score'] for c in top_crops]
+        colors      = ['#2ecc71' if s >= 70 else '#f39c12' if s >= 50 else '#e74c4c' for s in scores]
+
+        fig.add_trace(go.Bar(x=crops_names, y=scores, marker_color=colors, name='Suitability'), row=1, col=1)
+
+        all_scores = [c['score'] for c in crop_scores]
+        fig.add_trace(go.Box(y=all_scores, name='All Crops', marker_color='#3498db'), row=1, col=2)
+
+        status_counts = {'Highly Suitable (≥75)': 0, 'Suitable (60-74)': 0,
+                         'Moderate (40-59)': 0, 'Not Recommended (<40)': 0}
+        for crop in crop_scores:
+            if crop['score'] >= 75:
+                status_counts['Highly Suitable (≥75)'] += 1
+            elif crop['score'] >= 60:
+                status_counts['Suitable (60-74)'] += 1
+            elif crop['score'] >= 40:
+                status_counts['Moderate (40-59)'] += 1
+            else:
+                status_counts['Not Recommended (<40)'] += 1
+
+        fig.add_trace(go.Pie(
+            labels=list(status_counts.keys()), values=list(status_counts.values()),
+            marker=dict(colors=['#2ecc71', '#3498db', '#f39c12', '#e74c4c'])), row=2, col=1)
+
+        categories = ['pH', 'Phosphorus', 'Potassium', 'Organic Matter', 'Soil Type']
+        avg_scores = []
+        for cat in ['ph', 'phosphorus', 'potassium', 'organic_matter', 'soil_type']:
+            avg = np.mean([c['details'][cat] * 100 for c in crop_scores[:5]])
+            avg_scores.append(avg)
+
+        fig.add_trace(go.Bar(x=categories, y=avg_scores, marker_color='#9b59b6', name='Avg Score'), row=2, col=2)
+        fig.update_layout(height=800, showlegend=True, title_text="Crop Suitability Analysis Dashboard")
+        fig.update_xaxes(tickangle=45)
+        fig.show()
+
+    def create_soil_radar_chart(self, soil_data):
+        categories = ['pH', 'Phosphorus', 'Potassium', 'Organic Matter', 'Moisture Capacity']
+        values = [
+            (soil_data['ph'] / 9) * 100,
+            (soil_data['p_ppm'] / 100) * 100,
+            (soil_data['k_ppm'] / 200) * 100,
+            (soil_data['organic_matter'] / 6) * 100,
+            (soil_data.get('moisture', 50) / 80) * 100
+        ]
+
+        angles = np.linspace(0, 2 * np.pi, len(categories), endpoint=False).tolist()
+        values += values[:1]
+        angles += angles[:1]
+
+        fig, ax = plt.subplots(figsize=(8, 8), subplot_kw=dict(projection='polar'))
+        ax.plot(angles, values, 'o-', linewidth=2, color='#2ecc71')
+        ax.fill(angles, values, alpha=0.25, color='#2ecc71')
+        ax.set_xticks(angles[:-1])
+        ax.set_xticklabels(categories, fontsize=10)
+        ax.set_ylim(0, 100)
+        ax.set_title(f'Soil Characteristics - {soil_data["soil_type"]} Soil',
+                     fontsize=14, fontweight='bold', pad=20)
+        ax.grid(True)
+        plt.tight_layout(); plt.show()
+
+
+# =========================================
+# SOIL TEST INTERPRETER
+# =========================================
+
+class SoilTestInterpreter:
+
+    CROP_REQUIREMENTS = {
+        "Rice":      {"ph": (5.5, 7.0), "ph_optimal": (6.0, 6.5), "p_ppm": (20, 50), "k_ppm": (40, 100),  "organic_matter": (1.5, 3.0), "soil_types": ["Alluvial", "Clayey", "Loamy"]},
+        "Wheat":     {"ph": (6.0, 7.5), "ph_optimal": (6.5, 7.0), "p_ppm": (25, 60), "k_ppm": (50, 120),  "organic_matter": (1.5, 3.5), "soil_types": ["Loamy", "Alluvial", "Black"]},
+        "Maize":     {"ph": (5.8, 7.5), "ph_optimal": (6.0, 6.8), "p_ppm": (30, 70), "k_ppm": (60, 150),  "organic_matter": (2.0, 4.0), "soil_types": ["Loamy", "Alluvial", "Black"]},
+        "Cotton":    {"ph": (6.0, 7.5), "ph_optimal": (6.5, 7.0), "p_ppm": (25, 60), "k_ppm": (80, 150),  "organic_matter": (1.5, 3.0), "soil_types": ["Black", "Loamy", "Alluvial"]},
+        "Potato":    {"ph": (5.0, 6.5), "ph_optimal": (5.5, 6.0), "p_ppm": (30, 70), "k_ppm": (80, 180),  "organic_matter": (2.0, 4.0), "soil_types": ["Loamy", "Alluvial"]},
+        "Soybean":   {"ph": (6.0, 7.0), "ph_optimal": (6.3, 6.8), "p_ppm": (25, 60), "k_ppm": (50, 120),  "organic_matter": (2.0, 3.5), "soil_types": ["Loamy", "Alluvial", "Clayey"]},
+        "Groundnut": {"ph": (5.5, 7.0), "ph_optimal": (6.0, 6.5), "p_ppm": (20, 50), "k_ppm": (40, 100),  "organic_matter": (1.5, 3.0), "soil_types": ["Sandy", "Loamy", "Red"]},
+        "Barley":    {"ph": (6.0, 7.5), "ph_optimal": (6.5, 7.0), "p_ppm": (20, 50), "k_ppm": (50, 120),  "organic_matter": (1.5, 3.0), "soil_types": ["Loamy", "Alluvial"]},
+        "Sugarcane": {"ph": (6.0, 7.5), "ph_optimal": (6.5, 7.0), "p_ppm": (30, 70), "k_ppm": (80, 180),  "organic_matter": (2.0, 4.0), "soil_types": ["Black", "Alluvial", "Loamy"]},
+        "Tomato":    {"ph": (6.0, 7.0), "ph_optimal": (6.2, 6.8), "p_ppm": (30, 70), "k_ppm": (80, 160),  "organic_matter": (2.0, 4.0), "soil_types": ["Loamy", "Alluvial", "Red"]}
+    }
+
+    @staticmethod
+    def calculate_ph_score(ph, crop_name):
+        if crop_name not in SoilTestInterpreter.CROP_REQUIREMENTS:
+            return 0.5
+        req = SoilTestInterpreter.CROP_REQUIREMENTS[crop_name]
+        ph_range   = req["ph"]
+        ph_optimal = req["ph_optimal"]
+        if ph < ph_range[0] or ph > ph_range[1]:
+            return 0.0
+        elif ph_optimal[0] <= ph <= ph_optimal[1]:
+            return 1.0
+        elif ph < ph_optimal[0]:
+            return (ph - ph_range[0]) / (ph_optimal[0] - ph_range[0])
+        else:
+            return (ph_range[1] - ph) / (ph_range[1] - ph_optimal[1])
+
+    @staticmethod
+    def get_overall_suitability(soil_data, crop_name):
+        scores = {
+            "ph": SoilTestInterpreter.calculate_ph_score(soil_data["ph"], crop_name),
+            "phosphorus": 0.5, "potassium": 0.5, "organic_matter": 0.5, "soil_type": 0.5
+        }
+        if soil_data["p_ppm"] >= 30:
+            scores["phosphorus"] = min(1.0, soil_data["p_ppm"] / 60)
+        if soil_data["k_ppm"] >= 60:
+            scores["potassium"] = min(1.0, soil_data["k_ppm"] / 120)
+        if soil_data["organic_matter"] >= 2.0:
+            scores["organic_matter"] = min(1.0, soil_data["organic_matter"] / 4.0)
+
+        req = SoilTestInterpreter.CROP_REQUIREMENTS[crop_name]
+        scores["soil_type"] = 1.0 if soil_data["soil_type"] in req["soil_types"] else 0.3
+
+        weights = {"ph": 0.30, "phosphorus": 0.20, "potassium": 0.20,
+                   "organic_matter": 0.15, "soil_type": 0.15}
+
+        total_score = sum(scores[key] * weights[key] for key in weights)
+        return total_score * 100, scores
+
+
+# =========================================
+# MAIN EXECUTION
+# =========================================
+
+def main():
+    print("\n" + "="*80)
+    print("     CROP PREDICTION SYSTEM WITH SOIL TEST REPORT")
+    print("="*80)
+
+    # ── Load Dataset ──────────────────────────────────────────────────────────
+    # Set your CSV path here:
+    DATASET_PATH = CropSoilDataset.DEFAULT_CSV_PATH
+
+    print("\n📂 Loading dataset...")
+    loader = CropSoilDataset()
+    df = loader.load_dataset(DATASET_PATH)
+
+    print(f"\n📊 Dataset Summary:")
+    print(f"   Total Rows  : {len(df):,}")
+    print(f"   Crops       : {sorted(df['crop'].unique())}")
+    print(f"   Soil Types  : {sorted(df['soil'].unique())}")
+    print(f"   Columns     : {list(df.columns)}")
+
+    # ── Train Model ───────────────────────────────────────────────────────────
+    print("\n🤖 Training neural network...")
+    model = AdvancedCropModel()
+    history = model.train(df, epochs=50, batch_size=64)
+
+    analytics = CropAnalytics()
+
+    print("\n📈 Plotting training history...")
+    analytics.plot_training_history(history)
+
+    print("\n🌡️ Plotting pH optimization curves...")
+    analytics.plot_ph_optimization()
+
+    # ── User Input ────────────────────────────────────────────────────────────
+    print("\n" + "="*80)
+    print("📊 ENTER YOUR SOIL TEST RESULTS")
+    print("="*80)
+
+    try:
+        print("\n--- Basic Soil Parameters ---")
+        ph             = float(input("Soil pH (e.g. 6.5): "))
+        phosphorus     = float(input("Phosphorus (P) ppm (e.g. 40): "))
+        potassium      = float(input("Potassium (K) ppm (e.g. 70): "))
+        organic_matter = float(input("Organic Matter % (e.g. 2.5): "))
+
+        print("\n🌱 Soil Types: Alluvial, Black, Red, Laterite, Sandy, Clayey, Loamy")
+        soil_type = input("Select soil type: ").strip().capitalize()
+
+        print("\n--- Optional Environmental Conditions (press Enter for defaults) ---")
+        temp_input     = input("Temperature °C [default 25]: ")
+        temperature    = float(temp_input) if temp_input.strip() else 25.0
+
+        humidity_input = input("Humidity % [default 60]: ")
+        humidity       = float(humidity_input) if humidity_input.strip() else 60.0
+
+        moisture_input = input("Soil Moisture % [default 50]: ")
+        moisture       = float(moisture_input) if moisture_input.strip() else 50.0
+
+        nitrogen_input = input("Nitrogen (N) ppm [default 65]: ")
+        nitrogen       = float(nitrogen_input) if nitrogen_input.strip() else 65.0
+
+    except ValueError:
+        print("❌ Invalid input! Please enter numeric values.")
+        return
+
+    soil_data = {
+        "ph": ph, "p_ppm": phosphorus, "k_ppm": potassium,
+        "organic_matter": organic_matter, "soil_type": soil_type,
+        "temperature": temperature, "humidity": humidity, "moisture": moisture
+    }
+
+    print("\n📊 Generating soil characteristics radar chart...")
+    analytics.create_soil_radar_chart(soil_data)
+
+    print("\n🔍 Analyzing crop suitability...")
+    interpreter      = SoilTestInterpreter()
+    crop_suitability = []
+
+    for crop in list(interpreter.CROP_REQUIREMENTS.keys()):
+        score, details = interpreter.get_overall_suitability(soil_data, crop)
+        if score >= 75:
+            suitability = "Highly Suitable ⭐⭐⭐"
+        elif score >= 60:
+            suitability = "Suitable ⭐⭐"
+        elif score >= 40:
+            suitability = "Moderately Suitable ⭐"
+        else:
+            suitability = "Not Recommended ❌"
+
+        crop_suitability.append({
+            "crop": crop, "score": score,
+            "suitability": suitability, "details": details
+        })
+
+    crop_suitability.sort(key=lambda x: x["score"], reverse=True)
+
+    print("\n📄 Generating Professional Soil Test Report...")
+    report = SoilTestReport(
+        lab_number  = random.randint(10000, 99999),
+        client_name = "Farmer",
+        county       = "Your County",
+        sample_id   = 1
+    )
+    report.set_soil_data(ph, phosphorus, potassium, organic_matter,
+                         soil_type, temperature, humidity, moisture)
+    report.set_crop_recommendations(crop_suitability)
+    print(report.generate_full_report())
+
+    save_option = input("\n💾 Save report to file? (y/n): ").lower().strip()
+    if save_option == 'y':
+        report.save_report_to_file()
+
+    print("\n" + "="*80)
+    print("              TOP 10 CROP RECOMMENDATIONS")
+    print("="*80)
+    print(f"\n{'Rank':<6} {'Crop':<15} {'Score':<10} {'Suitability'}")
+    print("-" * 60)
+    for idx, crop in enumerate(crop_suitability[:10], 1):
+        print(f"{idx:<6} {crop['crop']:<15} {crop['score']:.1f}% {crop['suitability']}")
+
+    print("\n📊 Generating interactive dashboard...")
+    analytics.plot_crop_comparison_dashboard(crop_suitability)
+
+    if crop_suitability:
+        best_crop = crop_suitability[0]['crop']
+
+        if best_crop in model.crop_encoder.classes_ and soil_type in model.soil_encoder.classes_:
+            numerical_values = [temperature, humidity, moisture, nitrogen, phosphorus, potassium, ph]
+            ml_prediction    = model.predict(best_crop, soil_type, numerical_values)
+        else:
+            fallback_crop = model.crop_encoder.classes_[0]
+            fallback_soil = model.soil_encoder.classes_[0]
+            numerical_values = [temperature, humidity, moisture, nitrogen, phosphorus, potassium, ph]
+            ml_prediction    = model.predict(fallback_crop, fallback_soil, numerical_values)
+
+        print("\n" + "="*80)
+        print("              FINAL RECOMMENDATION")
+        print("="*80)
+        print(f"\n✅ MOST SUITABLE CROP : {best_crop.upper()}")
+        print(f"   Rule-based Score   : {crop_suitability[0]['score']:.1f}%")
+        print(f"   ML Model Prediction: {ml_prediction:.1f}%")
+
+        fertilizer = report.get_fertilizer_recommendation()
+        print(f"\n📌 Recommended Fertilizer: {fertilizer['name']} ({fertilizer['grade']})")
+        print(f"   Application Rate: {fertilizer['rate_lbs_per_1000sqft']} lbs per 1000 sq ft")
+
+        if crop_suitability[0]['score'] >= 75:
+            print(f"\n   🌟 HIGHLY RECOMMENDED for planting!")
+        elif crop_suitability[0]['score'] >= 60:
+            print(f"\n   👍 Recommended with proper management")
+        else:
+            print(f"\n   ⚠️  Consider soil amendments before planting")
+
+    print("\n" + "="*80)
+    print("Analytics Summary:")
+    print(f"   • Dataset         : {len(df):,} rows loaded")
+    print(f"   • Neural Network  : {model.model.count_params():,} parameters")
+    print(f"   • Crops analysed  : {len(crop_suitability)}")
+    print(f"   • Soil report     : Generated")
+    print(f"   • Visualizations  : Created")
+    print("="*80)
+
+    return report, model, soil_type, temperature, humidity, moisture, nitrogen, phosphorus, potassium, ph
+
+
+if __name__ == "__main__":
+    main()
